@@ -62,18 +62,18 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 /* 全局变量 */
 SystemRole_TypeDef current_role = ROLE_SLAVE; // 当前角色
-uint8_t rx_buffer[128]; // 接收缓冲�???????
-uint8_t rx_byte;        // 单字节接收缓�???????
+uint8_t rx_buffer[128]; // 接收缓冲区
+uint8_t rx_byte;        // 单字节接收缓存
 uint8_t rx_flag = 0;    // 接收完成标志
 uint8_t rx_idx = 0;     // 接收索引
 
-uint32_t last_poll_time = 0; // 主机轮询计时�???????
+uint32_t last_poll_time = 0; // 主机轮询计时器
 uint32_t last_key_time = 0;
 
-// 数码管显示缓冲：[0]=模式�???, [1]=十位, [2]=个位
+// 数码管显示缓冲：[0]=模式码, [1]=十位, [2]=个位
 uint8_t disp_buf[3] = {0, 17, 17};
 
-// 上电默认值设�?? 255 (表示还没读或者无�??)
+// 上电默认值设为 255 (表示还没读或者无效)
 uint8_t saved_temp = 255;
 
 /* USER CODE END PV */
@@ -100,7 +100,7 @@ uint8_t AT24C02_ReadOneByte(uint8_t addr);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 void RS485_Send(uint8_t *data, uint16_t len) {
-    RS485_TX_EN(); // 切为发�??
+    RS485_TX_EN(); // 切为发送
     HAL_UART_Transmit(&huart2, data, len, 100);
     RS485_RX_EN(); // 切回接收
 }
@@ -152,9 +152,9 @@ int main(void)
   //上电立刻读取 EEPROM 中的历史温度
     saved_temp = AT24C02_ReadOneByte(0x00);
     if (saved_temp > 99) {
-          saved_temp = 0; // 或�?? 255 代表无效
+          saved_temp = 0; // 或者 255 代表无效
       }
-  // 初始化显示缓冲：默认 Slave(0), 温度不显�???(0xFF)
+  // 初始化显示缓冲：默认 Slave(0), 温度不显示(0xFF)
     disp_buf[0] = 0;
     disp_buf[1] = 17;
     disp_buf[2] = 17;
@@ -181,7 +181,7 @@ int main(void)
 	            // 切换到主机时，立即从 EEPROM 读取历史温度显示
 	            if (current_role == ROLE_MASTER)
 			   {
-				   // 只要�??切换变成主机，马上把内存里存�?? saved_temp 显示出来
+				   // 只要一切换变成主机，马上把内存里存的 saved_temp 显示出来
 				   if (saved_temp <= 99) {
 					   if(saved_temp < 10) {
 						   disp_buf[1] = 17;
@@ -203,7 +203,7 @@ int main(void)
 	   /* ================= 主机逻辑 (MASTER) ================= */
 	   if (current_role == ROLE_MASTER)
 	   {
-	        // A. 周期发�?? Modbus 查询 (1秒一�??)
+	        // A. 周期发送 Modbus 查询 (1秒一次)
 	        if (HAL_GetTick() - last_poll_time >= 1000)
 	        {
 	            uint8_t tx_buf[8] = {0x01, 0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00};
@@ -215,7 +215,7 @@ int main(void)
 	            last_poll_time = HAL_GetTick();
 	        }
 
-	        // B. 接收并解�??
+	        // B. 接收并解析
 	        if (rx_idx >= 7)
 	        {
 	            uint16_t cal_crc = ModBus_CRC16(rx_buffer, rx_idx - 2);
@@ -244,7 +244,7 @@ int main(void)
 	                HAL_UART_Transmit(&huart1, (uint8_t*)msg_buf, strlen(msg_buf), 10);
 
 	                //EEPROM 存储逻辑
-	                // 只有当温度发生变化，且数值有效时才写入，保护芯片寿命，防止频繁写入�?�成的数码管闪烁
+	                // 只有当温度发生变化，且数值有效时才写入，保护芯片寿命，防止频繁写入造成的数码管闪烁
 	                if (temp_show != saved_temp)
 	                {
 	                    AT24C02_WriteOneByte(0x00, (uint8_t)temp_show); // 写入地址 0x00
@@ -253,7 +253,7 @@ int main(void)
 	                    HAL_UART_Transmit(&huart1, (uint8_t*)"Saved to ROM\r\n", 14, 10);
 	                }
 
-	                // 更新数码�??
+	                // 更新数码管
 	                if (temp_show < 10) {
 	                       disp_buf[1] = 17; // 十位熄灭
 	                   } else {
@@ -626,7 +626,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     if (huart->Instance == USART2)
     {
         rx_buffer[rx_idx++] = rx_byte;
-        // �??????单防溢出
+        // 简单防溢出
         if (rx_idx >= 128) rx_idx = 0;
         // 继续接收
         HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
@@ -636,7 +636,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (htim->Instance == TIM3)
     {
-        Display_Scan_Loop(); // 在中断里扫描数码�?
+        Display_Scan_Loop(); // 在中断里扫描数码管
     }
 }
 // ADC 读取函数 (读取 IN15)
@@ -644,7 +644,7 @@ uint16_t Get_ADC_Value(void)
 {
     HAL_ADC_Start(&hadc1);                     // 启动 ADC
     HAL_ADC_PollForConversion(&hadc1, 10);     // 等待转换完成
-    uint16_t val = HAL_ADC_GetValue(&hadc1);   // 获取数�??
+    uint16_t val = HAL_ADC_GetValue(&hadc1);   // 获取数据
     return val;
 }
 
@@ -668,8 +668,8 @@ uint16_t ModBus_CRC16(uint8_t *buffer, uint8_t len)
             }
         }
     }
-    // ModBus 协议�?????? CRC 是低字节在前，高字节在后，但计算结果通常不用交换�??????
-    // 发�?�时拆分即可�??????
+    // ModBus 协议中 CRC 是低字节在前，高字节在后，但计算结果通常不用交换
+    // 发送时拆分即可
     return crc;
 }
 // 共阴/共阳极段码表 (0-9, A, B, C, D, E, F, -)
@@ -683,7 +683,7 @@ const uint8_t SEG_CODE[] = {
 // 写段码 (控制 A-H 引脚)
 void Write_Segment(uint8_t code)
 {
-    // 使用命名的信�??? A-H
+    // 使用命名的信号 A-H
     HAL_GPIO_WritePin(A_GPIO_Port, A_Pin, (code & 0x01) ? GPIO_PIN_SET : GPIO_PIN_RESET);
     HAL_GPIO_WritePin(B_GPIO_Port, B_Pin, (code & 0x02) ? GPIO_PIN_SET : GPIO_PIN_RESET);
     HAL_GPIO_WritePin(C_GPIO_Port, C_Pin, (code & 0x04) ? GPIO_PIN_SET : GPIO_PIN_RESET);
@@ -695,10 +695,10 @@ void Write_Segment(uint8_t code)
 }
 
 
-// 硬件位�?�输出函�???
+// 硬件位选输出函数
 void Select_Hardware_Digit(uint8_t val)
 {
-    // 这里�??? 0x01, 0x02, 0x04 对应 SEL0(A), SEL1(B), SEL2(C)
+    // 这里用 0x01, 0x02, 0x04 对应 SEL0(A), SEL1(B), SEL2(C)
     HAL_GPIO_WritePin(SEL0_GPIO_Port, SEL0_Pin, (val & 0x01) ? GPIO_PIN_SET : GPIO_PIN_RESET);
     HAL_GPIO_WritePin(SEL1_GPIO_Port, SEL1_Pin, (val & 0x02) ? GPIO_PIN_SET : GPIO_PIN_RESET);
     HAL_GPIO_WritePin(SEL2_GPIO_Port, SEL2_Pin, (val & 0x04) ? GPIO_PIN_SET : GPIO_PIN_RESET);
@@ -708,13 +708,13 @@ void Select_Hardware_Digit(uint8_t val)
 void Display_Scan_Loop(void)
 {
     static uint8_t step = 0;
-    // 强制消隐 (关断段�??) —�?? 解决重叠和显�???8的核心！
+    // 强制消隐 (关断段选) —— 解决重叠和显示8的核心！
     Write_Segment(0x00);
 
     // 加一点微小的延时，给硬件反应时间 (消影死区)
     for(int i=0; i<50; i++) { __NOP(); }
 
-    //切换位�?? (74HC138)
+    //切换位选 (74HC138)
     switch(step)
     {
         case 0:
@@ -738,19 +738,19 @@ void Display_Scan_Loop(void)
     // 第三步：发光延时
     HAL_Delay(2);
 
-    // 切换下一�???
+    // 切换下一步
     step++;
     if(step > 2) step = 0;
 }
 
-// 写入�??个字节到 EEPROM
+// 写入一个字节到 EEPROM
 void AT24C02_WriteOneByte(uint8_t addr, uint8_t data)
 {
-    // 等待芯片就绪（重�? 3 次），防止上�?次写入还没结�?
+    // 等待芯片就绪（重试 3 次），防止上一次写入还没结束
     if(HAL_I2C_IsDeviceReady(&hi2c1, AT24C02_ADDR, 3, 100) == HAL_OK)
     {
         HAL_I2C_Mem_Write(&hi2c1, AT24C02_ADDR, addr, I2C_MEMADD_SIZE_8BIT, &data, 1, 100);
-        // 【关键�?�必须延�? 5ms，这�? AT24C02 的物理特性！
+        // 【关键】必须延时 5ms，这是 AT24C02 的物理特性！
         HAL_Delay(5);
     }
 }
@@ -758,12 +758,12 @@ void AT24C02_WriteOneByte(uint8_t addr, uint8_t data)
 uint8_t AT24C02_ReadOneByte(uint8_t addr)
 {
     uint8_t data = 0;
-    // 读取前也�?测一下，防止紧接�?写入后的读取失败o
+    // 读取前也检测一下，防止紧接着写入后的读取失败
     if(HAL_I2C_IsDeviceReady(&hi2c1, AT24C02_ADDR, 3, 100) == HAL_OK)
     {
         if(HAL_I2C_Mem_Read(&hi2c1, AT24C02_ADDR, addr, I2C_MEMADD_SIZE_8BIT, &data, 1, 100) != HAL_OK)
         {
-            return 0xFF; // 如果读取失败，返�? 0xFF 表示错误
+            return 0xFF; // 如果读取失败，返回 0xFF 表示错误
         }
     }
     return data;
